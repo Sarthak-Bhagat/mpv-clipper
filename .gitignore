@@ -1,0 +1,12 @@
+# AI tooling artefacts. Transcripts and agent config are a leak vector and have
+# no business in a public repo -- keep them out by rule, not by remembering.
+.claude/
+CLAUDE.md
+AGENTS.md
+.aider*
+.cursor/
+
+# Editor and OS noise
+*~
+*.swp
+.DS_Store
