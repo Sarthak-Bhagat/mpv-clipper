@@ -2,6 +2,8 @@
 -- an mp4 (with audio) and a gif of the range, current subtitle track burned in.
 --
 -- Output dir: script-opts/clipper.conf  ->  outdir=~/Videos/clips
+-- The two artifacts land in sibling folders, outdir/gif/ and outdir/mp4/, both
+-- under the one clip name -- so the gif folder can be browsed on its own.
 -- Rebind in input.conf with:  KEY script-binding clipper/clip
 
 local mp = require "mp"
@@ -65,19 +67,25 @@ local function clip_name(t)
     return title .. (se and ("-" .. se:lower()) or "") .. "-" .. stamp
 end
 
+-- kind is both the folder and the extension: outdir/gif/name.gif
+local function art_path(dir, kind, name)
+    return utils.join_path(utils.join_path(dir, kind), name .. "." .. kind)
+end
+
 -- a name is taken if any output this run would write already exists, so turning
--- mp4 off cannot start silently overwriting gifs
-local function unused_path(dir, name)
-    local path, n = utils.join_path(dir, name), 2
-    local function taken(p)
-        return (opts.mp4 and utils.file_info(p .. ".mp4"))
-            or (opts.gif and utils.file_info(p .. ".gif"))
+-- mp4 off cannot start silently overwriting gifs. One name for both folders, so
+-- a pair never ends up as name.gif beside name-2.mp4.
+local function unused_name(dir, name)
+    local function taken(n)
+        return (opts.mp4 and utils.file_info(art_path(dir, "mp4", n)))
+            or (opts.gif and utils.file_info(art_path(dir, "gif", n)))
     end
-    while taken(path) do
-        path = utils.join_path(dir, name .. "-" .. n)
+    local try, n = name, 2
+    while taken(try) do
+        try = name .. "-" .. n
         n = n + 1
     end
-    return path
+    return try
 end
 
 -- run argv lists one after another; stop and report on the first failure
@@ -113,8 +121,12 @@ local function clip(a, b)
 
     local outdir = mp.command_native({"expand-path",
         opts.outdir ~= "" and opts.outdir or default_outdir()})
-    utils.subprocess({args = {"mkdir", "-p", outdir}, cancellable = false})
-    local out = unused_path(outdir, clip_name(a))
+    local name = unused_name(outdir, clip_name(a))
+    -- called per kind as its encode is queued, so a gif-only run grows no empty mp4/
+    local function mkdir_for(kind)
+        utils.subprocess({args = {"mkdir", "-p", utils.join_path(outdir, kind)},
+                          cancellable = false})
+    end
 
     local tmp = utils.subprocess({args = {"mktemp", "-d", "/tmp/mpv-clipper.XXXXXX"},
                                   cancellable = false}).stdout:gsub("%s+$", "")
@@ -152,22 +164,27 @@ local function clip(a, b)
     end
     local made = {}
     if opts.mp4 then
-        made[#made + 1] = ".mp4"
+        made[#made + 1] = "mp4/"
+        mkdir_for("mp4")
         steps[#steps + 1] = {what = "mp4 encode", args = cut({
             "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "slow",
             "-crf", "18", "-pix_fmt", "yuv420p", "-vf", subs .. "scale=1280:-2",
-            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", out .. ".mp4"})}
+            "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y",
+            art_path(outdir, "mp4", name)})}
     end
     if opts.gif then
-        made[#made + 1] = ".gif"
+        made[#made + 1] = "gif/"
+        mkdir_for("gif")
         steps[#steps + 1] = {what = "gif encode", args = cut({
-            "-map", "0:v:0", "-an", "-vf", subs .. GIF_VF, "-loop", "0", "-y", out .. ".gif"})}
+            "-map", "0:v:0", "-an", "-vf", subs .. GIF_VF, "-loop", "0", "-y",
+            art_path(outdir, "gif", name)})}
     end
 
     osd(string.format("encoding %s → %s (%ss)…", hms(a), hms(b), dur), 30)
     chain(steps, function()
         utils.subprocess({args = {"rm", "-rf", tmp}, cancellable = false})
-        osd("saved " .. out .. " " .. table.concat(made, " / "), 5)
+        osd(string.format("saved %s in %s under %s", name,
+            table.concat(made, " + "), outdir), 5)
     end)
 end
 

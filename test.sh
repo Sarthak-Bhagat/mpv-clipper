@@ -46,6 +46,7 @@ ipc '{"command":["keypress","B"]}'
 for _ in $(seq 240); do grep -qE 'clipper\].*(saved|failed)' "$log" && break; sleep 0.5; done
 grep -E '\]\[(i|w|e)\]\[clipper\]' "$log" | sed 's/^\[[^]]*\]//'
 echo "output: $tmp/out"
-ls -l "$tmp/out" 2>/dev/null
+# the artifacts sit in gif/ and mp4/ now, so list the tree, not one level
+find "$tmp/out" -type f -printf '%P\t%s bytes\n' 2>/dev/null | sort
 
 grep -q 'clipper\].*saved' "$log"

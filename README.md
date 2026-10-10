@@ -2,8 +2,14 @@
 
 Press **B** in mpv to mark where a clip starts, press **B** again to mark where
 it ends, and you get an mp4 and a gif of that stretch, with the subtitles that
-were on screen burned in. They land in one folder, named after the show,
-episode and start time: `chainsmokercat-s01e12-10.32.mp4` / `.gif`.
+were on screen burned in. The two land in sibling folders under one name taken
+from the show, episode and start time:
+
+```
+<outdir>/
+├── gif/   chainsmokercat-s01e12-10.32.gif
+└── mp4/   chainsmokercat-s01e12-10.32.mp4
+```
 
 I wrote this for me, and it changes when I feel like changing it. It is one Lua
 file and a short config.
@@ -26,10 +32,17 @@ render in their own typeface, not a fallback.
 option, ffmpeg kept reading to the end of the episode: 65 seconds of work for a
 one-frame gif. As an input option it takes about a second.
 
-**`-copyts` and `-start_at_zero`.** Seeking on the input resets timestamps to
-zero, but the `subtitles` filter keeps reading the file's own clock, so the
-burned subs came out ~22 minutes off. `-copyts` keeps the real timestamps
-through the filter and `-start_at_zero` shifts the output back to zero.
+**`-copyts`, and a clip that keeps the episode's clock.** Seeking on the input
+resets timestamps to zero, but the `subtitles` filter keeps reading the file's
+own clock, so the burned subs came out ~22 minutes off. `-copyts` keeps the real
+timestamps through the filter, which fixes the subs and has one visible cost:
+**the clip starts where the cut started, not at zero.** A clip taken at 17:34
+reports `start_time=1054.4` and its first video packet is at 1054.4 — measured,
+not assumed. Players and uploads do not care, but an absolute seek into a clip
+clamps, so clipping a clip does not work; go back to the source. `-start_at_zero`
+is passed and does **not** shift the output back (checked on ffmpeg 9.0.2); the
+subs being right is what matters here, so it stands until someone needs the
+other behaviour.
 
 **Cuts are exactly where you press.** No snapping to subtitle lines. When a clip
 is wanted by timestamp, the subtitle file is the better guide to where lines
@@ -96,7 +109,11 @@ Ctrl+b script-binding clipper/clip
 | mp4 | 1280px wide, x264 CRF 18, AAC 192k, faststart. Off with `mp4=no` |
 | gif | 600px wide, 15 fps, one-pass palette, loops. Off with `gif=no` |
 | name | `<title>-<sXXeYY>-<m.ss>`, taken from the filename. A leading `[Group]` tag is dropped, and the title stops at the first `(year)`, `[tag]`, ` - ` or `SxxEyy` |
-| collision | a second clip at the same second becomes `…-2`, never overwrites |
+| layout | `<outdir>/gif/` and `<outdir>/mp4/`. One name, two folders, so the gif folder can be browsed on its own |
+| collision | a second clip at the same second becomes `…-2`, never overwrites. The check reads **both** folders, so a pair never splits into `name.gif` beside `name-2.mp4` |
+
+Only the folders a run writes are created, so `gif=no` leaves no empty `gif/`
+sitting there.
 
 Encoding runs in the background. The OSD says when it starts and where it saved.
 If a step fails the OSD says which one, and ffmpeg's error is in the console
@@ -116,6 +133,19 @@ If a step fails the OSD says which one, and ffmpeg's error is in the console
 ./test.sh "/path/to/an/old/episode.mkv"          # clips 10:00.5 → 10:03.0
 ./test.sh "/path/to/an/old/episode.mkv" 60 64.5
 ```
+
+### Linting
+
+```fish
+luacheck .          # the script
+shellcheck test.sh  # the test harness
+```
+
+`.luacheckrc` sets the LuaJIT standard library that mpv actually provides and
+holds lines to 88 columns. Both pass clean, and a change that does not is a
+change that is not finished.
+
+### The live check
 
 It starts a headless mpv with your config and this repo's `clipper.lua`,
 presses B, seeks, presses B, and prints what the script logged. Clips go to a
